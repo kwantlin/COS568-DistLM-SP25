@@ -13,7 +13,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-""" Finetuning the library models for sequence classification on GLUE (Bert, XLM, XLNet, RoBERTa)."""
+""" Finetuning the library models for sequence classification on GLUE (Bert, XLM, XLNet, RoBERTa).
+
+This script supports three methods for distributed training:
+1. Manual gradient synchronization using gather/scatter (--sync_method gather_scatter)
+2. Manual gradient synchronization using all_reduce (--sync_method all_reduce)
+3. PyTorch's DistributedDataParallel for automatic gradient synchronization (--sync_method ddp)
+"""
 
 from __future__ import absolute_import, division, print_function
 
@@ -29,6 +35,7 @@ import torch.distributed as dist
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               TensorDataset)
 from torch.utils.data.distributed import DistributedSampler
+from torch.nn.parallel import DistributedDataParallel
 from tqdm import tqdm, trange
 
 # import a previous version of the HuggingFace Transformers package
@@ -205,7 +212,7 @@ def train(args, train_dataset, model, tokenizer):
                 ##################################################
                 
                 # Synchronize gradients across workers if in distributed mode
-                if args.world_size > 1:
+                if args.world_size > 1 and args.sync_method != "ddp":  # Skip custom sync when using DDP
                     if args.sync_method == "gather_scatter":
                         # print("Gather scatter")
                         sync_gradients_gather_scatter(model, args)
@@ -433,8 +440,8 @@ def main():
                         help="Port of the master node for distributed training.")
     parser.add_argument("--world_size", type=int, default=1,
                         help="Total number of distributed processes.")
-    parser.add_argument("--sync_method", type=str, default="none", choices=["none", "gather_scatter", "all_reduce"],
-                        help="Gradient synchronization method: none, gather_scatter, or all_reduce.")
+    parser.add_argument("--sync_method", type=str, default="none", choices=["none", "gather_scatter", "all_reduce", "ddp"],
+                        help="Gradient synchronization method: none, gather_scatter, all_reduce, or ddp (DistributedDataParallel).")
     args = parser.parse_args()
 
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
@@ -492,6 +499,13 @@ def main():
         torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
     model.to(args.device)
+    
+    # Wrap model with DistributedDataParallel if using DDP mode
+    if args.world_size > 1 and args.sync_method == "ddp":
+        model = DistributedDataParallel(model, 
+                                       device_ids=[args.local_rank] if torch.cuda.is_available() else None,
+                                       output_device=args.local_rank if torch.cuda.is_available() else None)
+        logger.info("Model wrapped with DistributedDataParallel")
 
     logger.info("Training/evaluation parameters %s", args)
 
