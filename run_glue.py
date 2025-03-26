@@ -207,8 +207,10 @@ def train(args, train_dataset, model, tokenizer):
                 # Synchronize gradients across workers if in distributed mode
                 if args.world_size > 1:
                     if args.sync_method == "gather_scatter":
+                        print("Gather scatter")
                         sync_gradients_gather_scatter(model, args)
                     elif args.sync_method == "all_reduce":
+                        print("All reduce")
                         sync_gradients_all_reduce(model, args)
                     
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
@@ -442,12 +444,11 @@ def main():
     if args.world_size > 1:
         os.environ['MASTER_ADDR'] = args.master_ip
         os.environ['MASTER_PORT'] = args.master_port
-        backend = 'nccl' if torch.cuda.is_available() else 'gloo'
+        backend = 'gloo'
         dist.init_process_group(backend=backend, 
                                 world_size=args.world_size, 
                                 rank=args.local_rank)
         print(f"Initialized process group: rank {args.local_rank} out of {args.world_size}")
-        torch.cuda.set_device(args.local_rank)
 
     # set up (distributed) training
     args.device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
