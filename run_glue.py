@@ -189,7 +189,7 @@ def train(args, train_dataset, model, tokenizer):
 
             # Print loss for the first five minibatches
             if step < 5 and args.local_rank in [-1, 0]:  # Only print from master process
-                print(f"Minibatch {step + 1}, Loss: {loss.item()}")
+                print(f"Minibatch {step}, Loss: {loss.item()}")
 
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
@@ -207,10 +207,10 @@ def train(args, train_dataset, model, tokenizer):
                 # Synchronize gradients across workers if in distributed mode
                 if args.world_size > 1:
                     if args.sync_method == "gather_scatter":
-                        print("Gather scatter")
+                        # print("Gather scatter")
                         sync_gradients_gather_scatter(model, args)
                     elif args.sync_method == "all_reduce":
-                        print("All reduce")
+                        # print("All reduce")
                         sync_gradients_all_reduce(model, args)
                     
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
@@ -249,7 +249,7 @@ def evaluate(args, model, tokenizer, prefix=""):
     for eval_task, eval_output_dir in zip(eval_task_names, eval_outputs_dirs):
         eval_dataset = load_and_cache_examples(args, eval_task, tokenizer, evaluate=True)
 
-        if not os.path.exists(eval_output_dir) and args.local_rank in [-1, 0]:
+        if not os.path.exists(eval_output_dir):
             os.makedirs(eval_output_dir)
 
         args.eval_batch_size = args.per_device_eval_batch_size
