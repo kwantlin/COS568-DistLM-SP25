@@ -125,8 +125,7 @@ def train(args, train_dataset, model, tokenizer):
             loss = outputs[0]  # model outputs are always tuple in pytorch-transformers (see doc)
 
             # Print loss for the first five minibatches
-            if step < 5:
-                print(f"Minibatch {step}, Loss: {loss.item()}")
+            logger.info("Minibatch %d, Loss: %f", step, loss.item())
 
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
