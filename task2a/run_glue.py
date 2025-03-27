@@ -246,23 +246,22 @@ def train(args, train_dataset, model, tokenizer):
         ##################################################
     
     # Plot and save the loss curve
-    if args.local_rank in [-1, 0]:  # Only plot from master process
-        plt.figure(figsize=(10, 6))
-        plt.plot(step_history, loss_history)
-        plt.xlabel('Training Steps')
-        plt.ylabel('Loss')
-        plt.title(f'Training Loss Curve (Rank {args.local_rank})')
-        plt.grid(True)
-        
-        # Save the plot with rank information
-        plt.savefig(f'loss_curve_rank_{args.local_rank}.png')
-        
-        # Also save the loss data as CSV for further analysis
-        with open(f'loss_data_rank_{args.local_rank}.csv', 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['Step', 'Loss'])
-            for step, loss in zip(step_history, loss_history):
-                writer.writerow([step, loss])
+    plt.figure(figsize=(10, 6))
+    plt.plot(step_history, loss_history)
+    plt.xlabel('Training Steps')
+    plt.ylabel('Loss')
+    plt.title(f'Training Loss Curve (Rank {args.local_rank})')
+    plt.grid(True)
+    
+    # Save the plot with rank information
+    plt.savefig(f'loss_curve_rank_{args.local_rank}.png')
+    
+    # Also save the loss data as CSV for further analysis
+    with open(f'loss_data_rank_{args.local_rank}.csv', 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Step', 'Loss'])
+        for step, loss in zip(step_history, loss_history):
+            writer.writerow([step, loss])
 
     return global_step, tr_loss / global_step
 
