@@ -25,8 +25,7 @@ import random
 
 import numpy as np
 import torch
-import sys
-sys.path.append("..")
+import torch.distributed as dist
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               TensorDataset)
 from torch.utils.data.distributed import DistributedSampler
@@ -69,11 +68,31 @@ def set_seed(args):
     torch.cuda.manual_seed_all(args.seed)
 
 
+def sync_gradients_all_reduce(model, args):
+    """Synchronize gradients across workers using all_reduce operation."""
+    # Only perform synchronization if we're in distributed mode
+    if args.world_size <= 1:
+        return
+
+    # Get list of all parameters with gradients
+    param_list = [p for p in model.parameters() if p.requires_grad and p.grad is not None]
+    
+    for param in param_list:
+        # All-reduce the gradients (sum across all workers)
+        dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM)
+        
+        # Divide by world size to get the average
+        param.grad.data.div_(args.world_size)
+
+
 def train(args, train_dataset, model, tokenizer):
     """ Train the model """
 
     args.train_batch_size = args.per_device_train_batch_size
-    train_sampler = RandomSampler(train_dataset)
+    if args.world_size > 1:
+        train_sampler = DistributedSampler(train_dataset)
+    else:
+        train_sampler = RandomSampler(train_dataset)
     train_dataloader = DataLoader(train_dataset, sampler=train_sampler, batch_size=args.train_batch_size)
 
     if args.max_steps > 0:
@@ -112,7 +131,11 @@ def train(args, train_dataset, model, tokenizer):
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0])
     set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
-    for _ in train_iterator:
+    for epoch in train_iterator:
+        # Set epoch for distributed sampler
+        if args.world_size > 1:
+            train_sampler.set_epoch(epoch)
+            
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
         for step, batch in enumerate(epoch_iterator):
             model.train()
@@ -125,8 +148,8 @@ def train(args, train_dataset, model, tokenizer):
             loss = outputs[0]  # model outputs are always tuple in pytorch-transformers (see doc)
 
             # Print loss for the first five minibatches
-            if step < 5:
-                logger.info("Minibatch %d, Loss: %f", step, loss.item())
+            if step < 5 and args.local_rank in [-1, 0]:  # Only print from master process
+                print(f"Minibatch {step}, Loss: {loss.item()}")
 
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
@@ -140,6 +163,11 @@ def train(args, train_dataset, model, tokenizer):
                 # TODO(cos568): perform backward pass here (expect one line of code)
                 loss.backward()
                 ##################################################
+                
+                # Synchronize gradients across workers if in distributed mode
+                if args.world_size > 1:
+                    sync_gradients_all_reduce(model, args)
+                    
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
             tr_loss += loss.item()
@@ -176,7 +204,7 @@ def evaluate(args, model, tokenizer, prefix=""):
     for eval_task, eval_output_dir in zip(eval_task_names, eval_outputs_dirs):
         eval_dataset = load_and_cache_examples(args, eval_task, tokenizer, evaluate=True)
 
-        if not os.path.exists(eval_output_dir) and args.local_rank in [-1, 0]:
+        if not os.path.exists(eval_output_dir):
             os.makedirs(eval_output_dir)
 
         args.eval_batch_size = args.per_device_eval_batch_size
@@ -354,10 +382,26 @@ def main():
                              "See details at https://nvidia.github.io/apex/amp.html")
     parser.add_argument("--local_rank", type=int, default=-1,
                         help="For distributed training: local_rank. If single-node training, local_rank defaults to -1.")
+    parser.add_argument("--master_ip", default="localhost", type=str,
+                        help="IP address of the master node for distributed training.")
+    parser.add_argument("--master_port", default="12355", type=str,
+                        help="Port of the master node for distributed training.")
+    parser.add_argument("--world_size", type=int, default=1,
+                        help="Total number of distributed processes.")
     args = parser.parse_args()
 
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
         raise ValueError("Output directory ({}) already exists and is not empty. Use --overwrite_output_dir to overcome.".format(args.output_dir))
+
+    # Initialize distributed environment if needed
+    if args.world_size > 1:
+        os.environ['MASTER_ADDR'] = args.master_ip
+        os.environ['MASTER_PORT'] = args.master_port
+        backend = 'gloo'
+        dist.init_process_group(backend=backend, 
+                                world_size=args.world_size, 
+                                rank=args.local_rank)
+        print(f"Initialized process group: rank {args.local_rank} out of {args.world_size}")
 
     # set up (distributed) training
     args.device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
@@ -412,7 +456,8 @@ def main():
         logger.info(" global_step = %s, average loss = %s", global_step, tr_loss)
 
     # Evaluation
-    evaluate(args, model, tokenizer, prefix="")
+    if args.local_rank in [-1, 0] and args.do_eval:  # Only evaluate on master process
+        evaluate(args, model, tokenizer, prefix="")
 
 if __name__ == "__main__":
     main()
