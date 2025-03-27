@@ -499,10 +499,10 @@ def main():
     
      # Wrap model with DistributedDataParallel if using DDP mode
      if args.world_size > 1:
-         model = DistributedDataParallel(model, 
+        model = DistributedDataParallel(model, 
                                         device_ids=[args.local_rank] if torch.cuda.is_available() else None,
                                         output_device=args.local_rank if torch.cuda.is_available() else None)
-         logger.info("Model wrapped with DistributedDataParallel")
+        logger.info("Model wrapped with DistributedDataParallel")
          
 
     logger.info("Training/evaluation parameters %s", args)
