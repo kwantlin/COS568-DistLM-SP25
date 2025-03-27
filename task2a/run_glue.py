@@ -22,6 +22,8 @@ import glob
 import logging
 import os
 import random
+import sys
+sys.path.append("..")
 
 import numpy as np
 import torch
