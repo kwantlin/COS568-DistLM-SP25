@@ -498,7 +498,7 @@ def main():
     model.to(args.device)
     
      # Wrap model with DistributedDataParallel if using DDP mode
-     if args.world_size > 1:
+    if args.world_size > 1:
         model = DistributedDataParallel(model, 
                                         device_ids=[args.local_rank] if torch.cuda.is_available() else None,
                                         output_device=args.local_rank if torch.cuda.is_available() else None)
