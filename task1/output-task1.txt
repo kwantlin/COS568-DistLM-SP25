@@ -1,5 +1,0 @@
-Minibatch 0, Loss: 0.7691709399223328
-Minibatch 1, Loss: 0.7817338705062866
-Minibatch 2, Loss: 0.6885838508605957
-Minibatch 3, Loss: 0.7662752866744995
-Minibatch 4, Loss: 0.7341869473457336
