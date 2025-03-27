@@ -23,6 +23,7 @@ import logging
 import os
 import random
 import time
+import csv
 import sys
 sys.path.append("..")
 
@@ -33,6 +34,7 @@ from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
                               TensorDataset)
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm, trange
+import matplotlib.pyplot as plt
 
 # import a previous version of the HuggingFace Transformers package
 from pytorch_transformers import (WEIGHTS_NAME, BertConfig,
@@ -156,6 +158,11 @@ def train(args, train_dataset, model, tokenizer):
     model.zero_grad()
     train_iterator = trange(int(args.num_train_epochs), desc="Epoch", disable=args.local_rank not in [-1, 0])
     set_seed(args)  # Added here for reproductibility (even between python 2 and 3)
+    
+    # Initialize loss tracking for plotting
+    loss_history = []
+    step_history = []
+    
     for epoch in train_iterator:
         # Set epoch for distributed sampler
         if args.world_size > 1:
@@ -184,6 +191,10 @@ def train(args, train_dataset, model, tokenizer):
             if args.gradient_accumulation_steps > 1:
                 loss = loss / args.gradient_accumulation_steps
 
+            # Log loss for plotting
+            loss_history.append(loss.item())
+            step_history.append(global_step)
+                
             if args.fp16:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
                     scaled_loss.backward()
@@ -233,6 +244,25 @@ def train(args, train_dataset, model, tokenizer):
         # TODO(cos568): call evaluate() here to get the model performance after every epoch. (expect one line of code)
         evaluate(args, model, tokenizer, prefix="")
         ##################################################
+    
+    # Plot and save the loss curve
+    if args.local_rank in [-1, 0]:  # Only plot from master process
+        plt.figure(figsize=(10, 6))
+        plt.plot(step_history, loss_history)
+        plt.xlabel('Training Steps')
+        plt.ylabel('Loss')
+        plt.title(f'Training Loss Curve (Rank {args.local_rank})')
+        plt.grid(True)
+        
+        # Save the plot with rank information
+        plt.savefig(f'loss_curve_rank_{args.local_rank}.png')
+        
+        # Also save the loss data as CSV for further analysis
+        with open(f'loss_data_rank_{args.local_rank}.csv', 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['Step', 'Loss'])
+            for step, loss in zip(step_history, loss_history):
+                writer.writerow([step, loss])
 
     return global_step, tr_loss / global_step
 
