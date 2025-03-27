@@ -22,6 +22,7 @@ import glob
 import logging
 import os
 import random
+import time
 import sys
 sys.path.append("..")
 
@@ -139,7 +140,12 @@ def train(args, train_dataset, model, tokenizer):
             train_sampler.set_epoch(epoch)
             
         epoch_iterator = tqdm(train_dataloader, desc="Iteration", disable=args.local_rank not in [-1, 0])
+        # Initialize timing variables
+        iteration_times = []
+        first_iteration_done = False
+        
         for step, batch in enumerate(epoch_iterator):
+            start_time = time.time()
             model.train()
             batch = tuple(t.to(args.device) for t in batch)
             inputs = {'input_ids':      batch[0],
@@ -181,10 +187,23 @@ def train(args, train_dataset, model, tokenizer):
                 scheduler.step() # Update learning rate schedule
                 model.zero_grad()
                 global_step += 1
+                
+            # Record iteration time, skipping the first iteration
+            end_time = time.time()
+            if first_iteration_done:
+                iteration_times.append(end_time - start_time)
+            else:
+                first_iteration_done = True
 
             if args.max_steps > 0 and global_step > args.max_steps:
                 epoch_iterator.close()
                 break
+        
+        # Report average time per iteration (excluding the first one)
+        if args.local_rank in [-1, 0] and len(iteration_times) > 0:
+            avg_time = sum(iteration_times) / len(iteration_times)
+            logger.info(f"Average time per iteration (excluding first): {avg_time:.4f} seconds")
+                
         if args.max_steps > 0 and global_step > args.max_steps:
             train_iterator.close()
             break
