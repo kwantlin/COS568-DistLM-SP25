@@ -74,23 +74,6 @@ def set_seed(args):
     torch.cuda.manual_seed_all(args.seed)
 
 
-def sync_gradients_all_reduce(model, args):
-    """Synchronize gradients across workers using all_reduce operation."""
-    # Only perform synchronization if we're in distributed mode
-    if args.world_size <= 1:
-        return
-
-    # Get list of all parameters with gradients
-    param_list = [p for p in model.parameters() if p.requires_grad and p.grad is not None]
-    
-    for param in param_list:
-        # All-reduce the gradients (sum across all workers)
-        dist.all_reduce(param.grad.data, op=dist.ReduceOp.SUM)
-        
-        # Divide by world size to get the average
-        param.grad.data.div_(args.world_size)
-
-
 def train(args, train_dataset, model, tokenizer):
     """ Train the model """
 
@@ -185,8 +168,6 @@ def train(args, train_dataset, model, tokenizer):
                 ##################################################
                 
                 # Synchronize gradients across workers if in distributed mode
-                if args.world_size > 1:
-                    sync_gradients_all_reduce(model, args)
                     
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 

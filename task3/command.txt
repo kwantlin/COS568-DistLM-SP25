@@ -9,7 +9,7 @@
   --per_device_train_batch_size 16 \
   --learning_rate 2e-5 \
   --num_train_epochs 1 \
-  --output_dir /tmp/RTE2b/ \
+  --output_dir /tmp/RTE3/ \
   --overwrite_output_dir \
   --master_ip 10.10.1.2 \
   --master_port 12355 \
