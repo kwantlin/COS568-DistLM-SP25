@@ -449,6 +449,7 @@ def main():
         os.environ['MASTER_PORT'] = args.master_port
         backend = 'gloo'
         dist.init_process_group(backend=backend, 
+                                init_method=f"tcp://{args.master_ip}:{args.master_port}",
                                 world_size=args.world_size, 
                                 rank=args.local_rank)
         print(f"Initialized process group: rank {args.local_rank} out of {args.world_size}")
