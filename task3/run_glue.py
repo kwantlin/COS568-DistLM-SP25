@@ -167,8 +167,6 @@ def train(args, train_dataset, model, tokenizer):
                 loss.backward()
                 ##################################################
                 
-                # Synchronize gradients across workers if in distributed mode
-                    
                 torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
             tr_loss += loss.item()
